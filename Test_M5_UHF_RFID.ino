@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "RFID_command.h"
-
+#include <Ds1302.h>
+//UHF_JRD3045
 UHF_RFID RFID;
 
 String comd = " ";
@@ -13,14 +14,26 @@ QueryInfo Query;
 ReadInfo Read;
 TestInfo Test;
 
+// DS1302 RTC instance
+Ds1302 rtc(5, 22, 21);
+const static char* WeekDays[] =
+{
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday"
+};
+// DS1302 RTC instance
+
+
 void setup() {
 	Serial.begin(115200);
-	RFID._debug = 0;
+
 	Serial2.begin(115200, SERIAL_8N1, 16, 17); //16.17
-if (RFID._debug == 1){
-	//Serial.begin(115200, SERIAL_8N1, 21, 22);
-  Serial.println("Using Uart CHANNEL 0");
-}
+	 rtc.init();
 	RFID.Set_transmission_Power(2600);
 	RFID.Set_the_Select_mode();
 	RFID.Delay(100);
@@ -42,10 +55,10 @@ if (RFID._debug == 1){
 */}
 
 void loop() {
-
+	Ds1302::DateTime now;
 	//card = RFID.A_single_poll_of_instructions();
 	cards=RFID.Multiple_polling_instructions(10);
-
+	Cardinformation = RFID.NXP_Change_EAS(0x00000000);
      //Serial.println("RSSI :" + cards.card[1]._RSSI);
     // Serial.println("PC :" + cards.card[1]._PC);
      //Serial.println("EPC :" + cards.card[1]._EPC);
@@ -55,23 +68,54 @@ void loop() {
       {
        if(cards.card[i]._EPC.length() == 24)
           {
-           Serial.println("RSSI :" + cards.card[i]._RSSI);
+
+           Serial.println("RSSI :" + cards.card[i]._RSSI);//power level of the tag’s backscattered
            Serial.println("PC :" + cards.card[i]._PC);
-           Serial.println("EPC :" + cards.card[i]._EPC);
+           Serial.println("EPC :" + cards.card[i]._EPC);//Electronic Product Code / first writable memory bank.
            Serial.println("CRC :" + cards.card[i]._CRC);
+           if(Cardinformation._UL.length() != 0)
+           Serial.println("Card data :" +  Cardinformation._Data);
+         if(i==cards.len){
+        	 rtc.getDateTime(&now);
+        	 Serial.print(now.year);    // 00-99
+        	         Serial.print('-');
+
+        	         Serial.print(now.month);   // 01-12
+        	         Serial.print('-');
+
+        	         Serial.print(now.day);     // 01-31
+        	         Serial.print(' ');
+        	         Serial.print(WeekDays[now.dow - 1]);
+        	         Serial.print(' ');
+
+        	         Serial.print(now.hour);    // 00-23
+        	         Serial.print(':');
+
+        	         Serial.print(now.minute);  // 00-59
+        	         Serial.print(':');
+
+        	         Serial.print(now.second);  // 00-59
+        	         Serial.println();
+
+
+
+         }
+
            Serial.println(" ");
-           Serial.println(" ");
+
+
           }
       }
 
 
 
 //read a single tag
-	if(card._EPC.length() == 24){
+	/*if(card._EPC.length() == 24){
      Serial.println("RSSI :" + card._RSSI);
      Serial.println("PC :" + card._PC);
      Serial.println("EPC :" + card._EPC);
      Serial.println("CRC :" + card._CRC);
+     Serial.println("Card data :" +  Cardinformation._Data);
      Serial.println(" ");
 
    }
