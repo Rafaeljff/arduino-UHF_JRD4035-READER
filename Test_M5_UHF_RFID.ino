@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "RFID_command.h"
+#include <stdio.h>
 #include <Ds1302.h>
 #include <SPI.h>
 #include <SD.h>
@@ -16,23 +17,26 @@ CardInformationInfo Cardinformation;
 QueryInfo Query;
 ReadInfo Read;
 TestInfo Test;
-
+//Ds1302::DateTime now;
 // DS1302 RTC instance
 Ds1302 rtc(15, 22, 21);
 
 //File myFile;
-
+const int chipSelect = 5;
+char filename[] = "00000000.CSV";
 const static char *WeekDays[] = { "Monday", "Tuesday", "Wednesday", "Thursday",
 		"Friday", "Saturday", "Sunday" };
 // DS1302 RTC instance
 
 typedef struct check_box {
 	String tag_main;
-	String tag_count[25];
+	String tag_count[20];
 
 } check_box_tags;
 
-check_box_tags checkbox_set[30];
+check_box_tags checkbox_set[20];
+check_box_tags current_reading;
+
 volatile int set_counts = 0;
 
 const int button_read = 27;
@@ -41,38 +45,12 @@ void setup() {
 
 	Serial.begin(115200);
 	int check = 0;
-	/*
-	 Serial.print("Initializing SD card...");
-	 if (!SD.begin(10)) {
-	 Serial.println("initialization failed!");
-	 while (1);
-	 }
-	 Serial.println("initialization done.");
-	 // open the file. note that only one file can be open at a time,
-	 // so you have to close this one before opening another.
-	 myFile = SD.open("test.txt", FILE_WRITE);
-	 // if the file opened okay, write to it:
-	 if (myFile) {
-	 Serial.print("Writing to test.txt...");
-	 myFile.println("This is a test file :)");
-	 myFile.println("testing 1, 2, 3.");
-	 for (int i = 0; i < 20; i++) {
-	 myFile.println(i);
-	 }
-	 // close the file:
-	 myFile.close();
-	 Serial.println("done.");
-	 } else {
-	 // if the file didn't open, print an error:
-	 Serial.println("error opening test.txt");
-	 }
-	 */
 
 	checkbox_set[0].tag_main = "3039606243961e80000928ff";
-	checkbox_set[0].tag_count[4] = "e2003411b802011056264790";
-	checkbox_set[0].tag_count[5] = "e2003411b802011056264792";
+	checkbox_set[0].tag_count[0] = "3039606243961e80000928ff";
 
-	checkbox_set[1].tag_main = "e2003411b802011056264768";
+	checkbox_set[0].tag_count[5] = "e2003411b802011056264666";
+	checkbox_set[1].tag_main = "e2003411b802011056264798";
 
 	Serial2.begin(115200, SERIAL_8N1, 16, 17); //16.17
 	rtc.init();
@@ -83,114 +61,165 @@ void setup() {
 	RFID.Readcallback();
 	RFID.clean_data();
 
-// Determined whether to connect to UHF_RFID 判断是否连接UHF_RFID
-	/* String soft_version;
-	 soft_version = RFID.Query_software_version();
-	 { while(soft_version.indexOf("V2.3.5") == -1)
-	 {
-	 RFID.clean_data();
-	 RFID.Delay(150);
-	 soft_version = RFID.Query_software_version();
-	 }
-	 Serial.println("Please approach the RFID card you need to use");
-	 */}
+}
 
 void loop() {
-
 	//card = RFID.A_single_poll_of_instructions();
-	Ds1302::DateTime now;
-	rtc.getDateTime(&now);
-
-	//Cardinformation = RFID.NXP_Change_EAS(0x00000000);
-	//Serial.println("RSSI :" + cards.card[1]._RSSI);
-	// Serial.println("PC :" + cards.card[1]._PC);
-	//Serial.println("EPC :" + cards.card[1]._EPC);
-	///kSerial.println(" ");
-	//func_read_all();
-	cards = RFID.Multiple_polling_instructions(30);
-	int check = 0;
-	if (set_counts == sizeof(checkbox_set))
+	int pos;
+	int check = func_read_all(&pos);
+	if (set_counts == 20)
 		set_counts = 1;
 
-	for (size_t i = 0; i < cards.len; i++) {
-		Serial.print("\n");
-		if (cards.card[i]._EPC.length() == 24) {
+	if (check == 1)
+		check = caixa_completa(check, pos);
 
-			checkbox_set[set_counts].tag_count[i] = cards.card[i]._EPC;
+	if (check == 0) {
+		Serial.print("\n\nA caixa com a tag main ");
+		Serial.print(pos);
+		Serial.print("nao esta completa");
+	} else if (check == 1) {
+		Serial.print("\n\nA caixa com a tag main ");
+		Serial.print(pos);
+		Serial.print("esta completa");
+	}
+
+	Serial.print("\nNumber of boxes registered: ");
+	Serial.print(set_counts);
+	delay(5000);
+	/*Serial.println("\t");
+	 Serial.print(now.year);    // 00-99
+	 Serial.print('-');
+
+	 Serial.print(now.month);    // 01-12
+	 Serial.print('-');
+	 Serial.print(now.day);    // 01-31
+	 Serial.print(' ');
+	 Serial.print(WeekDays[now.dow - 1]);
+	 Serial.print(' ');
+	 Serial.print(now.hour);    // 00-23
+	 Serial.print(':');
+	 Serial.print(now.minute);    // 00-59
+	 //RFID.clean_data();
+	 delay(5000);
+	 */
+
+	/*
+	 cards = RFID.Multiple_polling_instructions(20);
+	 int check = 0;
+	 int pos = 0;
+
+	 for (size_t i = 0; i < cards.len; i++) {
+	 Serial.print("\n");
+	 if (i == 0) {
+	 set_counts++;
+
+	 if (cards.card[i]._EPC.length() == 24) {
+	 current_reading[i] = cards.card[i]._EPC;
+	 Serial.print("\t tag");
+	 Serial.print(i);
+	 Serial.print(":");
+
+	 Serial.print(cards.card[i]._EPC);    // 00-99
+
+	 for (int j = 0; j < set_counts; j++) {
+	 if (cards.card[i]._EPC == checkbox_set[j].tag_main) {
+	 pos = j;
+	 check = 1;
+	 Serial.print("\n Tag main da caixa ");
+	 Serial.print(j);
+	 Serial.print(" detetada");
+
+	 } else if (cards.card[i]._EPC != checkbox_set[j].tag_main
+	 && (j == set_counts - 1) && check == 0) {
+	 check = 0;
+	 Serial.print("\n Nao foram detetadas tags main ");
+	 }
+
+	 //check = 1;
+	 }
+	 }
+	 }
+	 }*/
+
+}
+int func_read_all(int *pos) {
+	int check = 0;
+	*pos = 0;
+	cards = RFID.Multiple_polling_instructions(20);
+
+	for (size_t i = 0; i < cards.len; i++) {
+		current_reading.tag_count[i] = cards.card[i]._EPC;
+		Serial.print("\n");
+
+		if (cards.card[i]._EPC.length() == 24) {
+			if (i == 0)
+				set_counts++; // Apenas incrementa uma vez, basta haver tag
 
 			Serial.print("\t tag");
 			Serial.print(i);
 			Serial.print(":");
-			//Serial.print(checkbox_set[0].tag_count[i]);    // 00-99
-			Serial.print(cards.card[i]._EPC);    // 00-99
+
+			Serial.print(cards.card[i]._EPC); // 00-99
+
 			for (int j = 0; j < set_counts; j++) {
 				if (cards.card[i]._EPC == checkbox_set[j].tag_main) {
-
+					*pos = j;
 					check = 1;
 					Serial.print("\n Tag main da caixa ");
-					Serial.print(j);
+					Serial.print(*pos);
 					Serial.print(" detetada");
-					/*for (int z = 0; z < 20; z++) {
-					 if (checkbox_set[j].tag_count[z]
-					 == checkbox_set[j].tag_count) {
-					 Serial.print(
-					 "\n-----------------------Tag pertencente à caixa");
 
-					 }
+					/*	for (int i = 0; i < 20; i++) {
+					 current_reading.tag_count[i]=cards.card[i]._EPC;
 					 }*/
+
+					RFID.clean_data();
+					return check;
+				} else if (cards.card[i]._EPC != checkbox_set[j].tag_main
+						&& (j == set_counts - 1) && check == 0
+						&& i == (cards.len - 1)) {
+					check = 0;
+					Serial.print("\n Nao foram detetadas tags main ");
+					RFID.clean_data();
+					return check;
 				}
 
+				//check = 1;
 			}
-			if (check == 0) {
-				Serial.print("\n\nTag main não detetada");
-				check = 1;
-			}
-			if (i == 0) {
-				set_counts++;
-			}
-			if (set_counts == 20)
-				set_counts = 1;
-		}
-	}
-	Serial.print("\nNumber of boxes registered: ");
-	Serial.print(set_counts);
-
-	RFID.clean_data();
-	Serial.println("\t");
-	Serial.print(now.year);    // 00-99
-	Serial.print('-');
-
-	Serial.print(now.month);   // 01-12
-	Serial.print('-');
-	Serial.print(now.day);     // 01-31
-	Serial.print(' ');
-	Serial.print(WeekDays[now.dow - 1]);
-	Serial.print(' ');
-	Serial.print(now.hour);    // 00-23
-	Serial.print(':');
-	Serial.print(now.minute);  // 00-59
-
-	delay(5000);
-
-//delay(1000);
-}
-void func_read_all(void) {
-
-	cards = RFID.Multiple_polling_instructions(10);
-	for (size_t i = 0; i < cards.len; i++) {
-		Serial.print("\n");
-		if (cards.card[i]._EPC.length() == 24) {
-
-			checkbox_set[0].tag_count[i] = cards.card[i]._EPC;
-			Serial.print("\t tag");
-			Serial.print(i + 1);
-			Serial.print(":");
-			Serial.print(checkbox_set[0].tag_count[i]);    // 00-99
-
 		}
 
 	}
-
 	RFID.clean_data();
+	return check;
 }
+int caixa_completa(int check, int pos) {
+	int check2[20];
+	int j = 0;
 
+	for (int i = 0; i < 20; i++) {
+		check2[i] = 0;
+
+		for (j = 0; j < 20; j++) {
+			if (checkbox_set[pos].tag_count[i]
+					== current_reading.tag_count[j]) {
+				check2[i] = 1;
+			}
+		}
+
+		/*
+		 } else if (checkbox_set[pos].tag_count[i]
+		 != current_reading.tag_count[j] && (j == 20)
+		 && check == 1) {
+		 check = 0;
+		 return check;
+		 }
+		 */
+	}
+
+	for (int y = 0; y < 20; y++) {
+		if (check2[y] != 1)
+			check = 0;
+	}
+	return check;
+
+}
