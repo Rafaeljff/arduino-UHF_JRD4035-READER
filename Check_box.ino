@@ -96,19 +96,20 @@ void setup() {
 		while (1)
 			delay(10);
 	}
-	WiFi.begin(ssid, password);
-	Serial.println("Connecting to wifi...");
-	while (WiFi.status() != WL_CONNECTED) {
-		delay(500);
-		Serial.print("still not connected to wifi");
-	}
-	Serial.println("");
-	Serial.print("Connected to WiFi network with IP Address: ");
-	client.setServer(mqtt_server, 1883);
-	client.setCallback(callback);
-	client.connect("SmartLab");
-	// Your Domain name with URL path or IP address with path
-	http.begin(Wificlient, serverName);
+	/*
+	 WiFi.begin(ssid, password);
+	 Serial.println("Connecting to wifi...");
+	 while (WiFi.status() != WL_CONNECTED) {
+	 delay(500);
+	 Serial.print("still not connected to wifi");
+	 }
+	 Serial.println("");
+	 Serial.print("Connected to WiFi network with IP Address: ");
+	 client.setServer(mqtt_server, 1883);
+	 client.setCallback(callback);
+	 client.connect("SmartLab");
+	 // Your Domain name with URL path or IP address with path
+	 http.begin(Wificlient, serverName);*/
 
 	ler_file_1();
 	ler_file_2();
@@ -176,7 +177,6 @@ void loop() {
 	int x, y, z;
 	Menu_main (User_menu_input());delay
 	(5000);
-	timerAlarmDisable(timer);
 
 	/*if(WiFi.status()== WL_CONNECTED){
 
@@ -261,6 +261,8 @@ void Menu_main(int menu_select) {
 		//existing_tags("test5");
 		break;
 	case 5:
+
+		Inserir_tag_nova_();
 		break;
 
 	default:
@@ -338,7 +340,6 @@ void func_verificar_tags() { //verifica se alguma tag lida corresponde a tags de
 				Serial.print(
 						"\n -------------------------- FIM DA LEITURA------------------------ ");
 			}
-			timerAlarmEnable(timer);
 
 		}
 
@@ -454,8 +455,12 @@ void scan_tags_row(String search_string, String current_reading_array[]) { // a 
 
 			Serial.print("\n A caixa esta completa");
 			state = "completa";
+			//timerAlarmEnable(timer);
+
 		} else {
 			state = "incompleta";
+			//timerAlarmDisable(timer);
+
 			Serial.print("\n A caixa nao esta completa");
 			Serial.print("\n tags em falta:");
 			for (int k = 0; k < missing_tag_counter; k++) {
@@ -947,24 +952,89 @@ String Inserir_tag_main_() {
 			"\n -------------------------- TAG NAO LIDA------------------------ ");
 	RFID.clean_data();
 }
-String Inserir_tag_nova_() {
-	Serial.print("\nInserir tag nova a caixa");
+void Inserir_tag_nova_() {
+
+	char new_tag[6];
+	char tag_main[6];
+	String reading_main;
 	String reading;
-	card = RFID.A_single_poll_of_instructions();
-	reading = card._EPC;
-	reading = reading.substring(19, 24);
-	while (card._EPC.length() != 24) {
-		if (card._EPC.length() != 24) {
-			Serial.println("\nInserir nova tag");
-		} else {
-			if (card._EPC.length() == 24) {
-				return reading;
+	while (reading.length() != 5) {
+		Serial.print("\n ler nova tag a registar");
+		reading = func_adicionar_novas_tags();
+		if (reading.length() == 5) {
+			int escolha = 0;
+			Serial.print("\n nova tag lida:");
+			Serial.print(reading);
+
+			while ((escolha != 1 || escolha != 2)) {
+				Serial.print("\nconfirmar 1-Sim  2-Nao");
+				escolha = Serial.parseInt();
+				if (escolha == 1) {
+
+					break;
+				} else if (escolha == 2) {
+					Serial.print("Escolher nova tag a associar como nova");
+
+					reading = func_adicionar_novas_tags();
+				}
+				delay(2000);
 			}
 		}
-		RFID.clean_data(); //Empty the data after using it 使用完数据后要将数据清空}
-		delay(1000);
+		delay(2000);
 	}
-	RFID.clean_data();
+	while (reading_main.length() != 5) {
+		Serial.print("\n ler tag caixa a que se pretende associar");
+		reading_main = func_adicionar_novas_tags();
+		if (reading_main.length() == 5) {
+
+			int escolha = 0;
+			int check_main = 0;
+
+			while (check_main == 0) {
+
+				for (int j = 0; j < file_counter_2; j++) {
+					if (reading_main == file2_tags[j]) {
+						check_main = 1;
+						Serial.print("\n tag lida pertence a uma caixa:");
+						Serial.print(reading_main);
+					} else if (j == file_counter_2 - 1 && check_main == 0) {
+
+						Serial.print(
+								"\n tag de caixa lida nao se encontra no sistema:");
+						Serial.print("\n Ler tag de caixa novamente");
+						reading_main = "";
+
+
+						delay(2000);
+					}
+
+				}
+
+			}
+
+			Serial.print("\n tag:");
+			Serial.print(reading);
+
+		}
+
+		delay(2000);
+	}
+	reading.toCharArray(new_tag, 6);
+	reading_main.toCharArray(tag_main, 6);
+	myFile = SD.open(filename_box_tag);
+	if (myFile) {
+
+		if (myFile.find(new_tag)) {
+
+			Serial.print(
+					"\n Tag ja registada no sistema logo nao podera ser adicionada novamente!");
+
+		}
+		myFile.close();
+	}
+
+	RFID.clean_data(); //Empty the data after using it 使用完数据后要将数据清空}
+
 }
 
 void put_on_line() { // para uma tag main adquirir as tags que lhe estao associadas
@@ -975,14 +1045,16 @@ void put_on_line() { // para uma tag main adquirir as tags que lhe estao associa
 	char *ptr;
 	char char_array[7];
 	char last_reading_char[6];
-	String current_reading_2[100];
+	String current_reading_2[30];
 	String reading;
 	String tag_main_2;
+	String string_find;
 	String last_reading;
+
 	//String tag_main = Inserir_tag_main_();
 	//String tag_nova = Inserir_tag_nova_();
 	//String current_reading = func_adicionar_novas_tags();
-	String tag_main = "928ff";
+	String tag_main = "9ddd2";
 	String tag_nova = "merda";
 	tag_main_2 = tag_main + ",";
 	tag_main_2.toCharArray(char_array, 6);
@@ -997,53 +1069,73 @@ void put_on_line() { // para uma tag main adquirir as tags que lhe estao associa
 				myFile.position();
 				while (myFile.available()) {
 					reading = myFile.readStringUntil('\n');
-					Serial.print(current_reading_2[count]);
+
 					if (myFile.find(",")) {
-						pos = myFile.position();
+						//pos = myFile.position();
 						count++;
 						break;
 					}
 				}
 			}
 			myFile.close();
-		}
-		char column[reading.length()];
-		Serial.print("\n\nLinha completa da tag:");
-		Serial.print("\n");
-		Serial.print(char_array);
-		Serial.print(":\n");
-		Serial.print(reading);
-		Serial.print("\n\n-------------------------------------------");
-		reading.toCharArray(column, reading.length());
-		ptr = strtok(column, ",");
-		while (ptr != NULL) {
-			current_reading_2[count2] = ptr;
-			last_reading = ptr;
-			count2++;
-			ptr = strtok(NULL, ",");
-		}
-		last_reading.toCharArray(last_reading_char, 7);
-		myFile = SD.open(filename_box_tag);
-		if (myFile) {
-			if (myFile.find(char_array)) {
-				pos = myFile.position();
+
+			char column[reading.length()];
+			Serial.print("\n\nLinha completa da tag:");
+
+			Serial.print(char_array);
+			Serial.print(":\n");
+			Serial.print(reading);
+			Serial.print("\n\n-------------------------------------------");
+			reading.toCharArray(column, reading.length());
+			ptr = strtok(column, ",");
+			while (ptr != NULL) {
+				current_reading_2[count2] = ptr;
+				last_reading = ptr;
+				count2++;
+				ptr = strtok(NULL, ",");
+			}
+			string_find = last_reading + ',';
+			string_find.toCharArray(last_reading_char, 6);
+			myFile = SD.open(filename_box_tag, FILE_READ);
+			if (myFile) {
+				if (myFile.find(last_reading_char)) {
+					pos = myFile.position();
+					Serial.print("encontrouuuuuuuuuuuuuuuuuuuuu");
+
+					myFile.close();
+				}
 				myFile.close();
 				Serial.print(last_reading_char);
 				myFile = SD.open(filename_box_tag, FILE_WRITE);
-				if (myFile) {
-					myFile.seek(pos);
-					myFile.print(last_reading_char);
-					myFile.print(",");
-					myFile.print(tag_nova);
-					myFile.close();
-					Serial.print("\nA ultima tag lida:");
-					Serial.print(last_reading_char);
-					Serial.print("\n");
+				if (myFile.seek(pos)) {
+					myFile.print(',' + tag_nova + ';');
+					//myFile.print(tag_nova);
+
 					myFile.close();
 				}
+				Serial.print("\nA ultima tag lida:");
+				Serial.print(last_reading_char);
+				Serial.print("\n");
+
 			}
+
 		}
+
 	}
+
+	/*myFile = SD.open(filename_box_tag, FILE_WRITE);
+	 if (myFile) {
+	 myFile.seek(pos);
+	 myFile.print(last_reading_char);
+	 myFile.print(",");
+	 myFile.print(tag_nova);
+	 myFile.close();
+	 Serial.print("\nA ultima tag lida:");
+	 Serial.print(last_reading_char);
+	 Serial.print("\n");
+	 myFile.close();
+	 }*/
+
 }
 
 void imprimir_file1() {
@@ -1072,4 +1164,6 @@ void imprimir_file2() {
 		}
 
 	}
+}
+void ler_tag_main_inserir() {
 }
