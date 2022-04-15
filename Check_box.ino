@@ -28,12 +28,14 @@ TestInfo Test;
 const int chipSelect = 5;
 File myFile;
 RTC_DS3231 rtc;
+unsigned long lastTime = 0;
 
+unsigned long timerDelay = 5000;
 const char *ssid = "labs";
 const char *password = "robot1cA!ESTG";
-
+String serverName1 = "http://10.20.228.80:1880/update-sensor";
 // REPLACE with your Domain name and URL path or IP address with path
-const char *serverName = "http://10.20.228.136/post-esp-data.php";
+const char *serverName = "http://10.20.228.80/post-esp-data.php";
 // MQTT broker
 const char *mqtt_server = "test.mosquitto.org";
 const char *topic_pub = "SmartLab/ESP32/test";
@@ -64,10 +66,11 @@ String file2_tags[30];
 int file_counter_2 = 0;
 int lastpos_file2 = 0;
 
-String commands_str = { "1-Verificação de tags na caixa"
-		"\n2-Inserir novas tags" };
-String commands_str_menu2 = { "1-Inserir nova tag de caixa"
-		"\n2-associar uma tag a uma tag de caixa existente" };
+String commands_str = { "\n1-Verificao de tags na caixa"
+		"\n2-Inserir uma nova tag como tag de caixa"
+		"\n3-inserir uma nova tag a uma caixa existente"
+		"\n4-Opcao programador de inserir dados no cartao" };
+
 int count_non_registered = 0;
 int count_registered = 0;
 void setup() {
@@ -96,8 +99,8 @@ void setup() {
 		while (1)
 			delay(10);
 	}
-	/*
-	 WiFi.begin(ssid, password);
+
+	/*WiFi.begin(ssid, password);
 	 Serial.println("Connecting to wifi...");
 	 while (WiFi.status() != WL_CONNECTED) {
 	 delay(500);
@@ -109,8 +112,8 @@ void setup() {
 	 client.setCallback(callback);
 	 client.connect("SmartLab");
 	 // Your Domain name with URL path or IP address with path
-	 http.begin(Wificlient, serverName);*/
-
+	 http.begin(Wificlient, serverName);
+	 */
 	ler_file_1();
 	ler_file_2();
 
@@ -175,8 +178,9 @@ void IRAM_ATTR onTimer() {
 // The loop function is called in an endless loop
 void loop() {
 	int x, y, z;
-	Menu_main (User_menu_input());delay
-	(5000);
+	Menu_main (User_menu_input());
+	delay
+		(5000);
 
 	/*if(WiFi.status()== WL_CONNECTED){
 
@@ -244,7 +248,7 @@ void loop() {
 void Menu_main(int menu_select) {
 	int check = 0;
 	int pos;
-	Serial.print(commands_str);
+	//Serial.print(commands_str);
 	switch (menu_select) {
 	case 1:
 
@@ -255,26 +259,30 @@ void Menu_main(int menu_select) {
 		InserirBox_file_1();
 		break;
 	case 3:
-		put_on_line();
+		Inserir_tag_nova_();
 		break;
 	case 4:
-		//existing_tags("test5");
+
+		write_sd();
+
 		break;
 	case 5:
 
-		Inserir_tag_nova_();
+
 		break;
 
 	default:
 
 		break;
-	}
+
+}
+
 }
 
 int User_menu_input() {
 
 	int menu_select;
-
+Serial.print(commands_str);
 	while (!Serial.available())
 		;
 
@@ -411,7 +419,7 @@ void scan_tags_row(String search_string, String current_reading_array[]) { // a 
 		myFile.close();
 		char column[reading.length()];
 
-		Serial.print("\n\nTAGS que estao associadas a tag da caixa lida: ");
+		Serial.print("\n\nTAGS no cartao que estao associadas a tag da caixa lid: ");
 		Serial.print(search_string);
 		Serial.print(":\n");
 		Serial.print(reading);
@@ -442,10 +450,14 @@ void scan_tags_row(String search_string, String current_reading_array[]) { // a 
 
 				missing_tags[missing_tag_counter] = current_reading_2[y];
 				missing_tag_counter++;
-			} else {
-				Serial.print("\n tag ");
+				Serial.print("\n tag:");
 				Serial.print(current_reading_2[y]);
-				Serial.print("\ presente na caixa");
+				Serial.print("nao presente na leitura");
+
+			} else {
+				Serial.print("\n tag:");
+				Serial.print(current_reading_2[y]);
+				Serial.print("presente na leitura de caixa");
 				present_tags[present_tag_counter] = current_reading_2[y];
 				present_tag_counter++;
 			}
@@ -453,15 +465,15 @@ void scan_tags_row(String search_string, String current_reading_array[]) { // a 
 
 		if (check == 0) {
 
-			Serial.print("\n A caixa esta completa");
+			Serial.print("\nESTADO:CAIXA COMPLETA");
 			state = "completa";
-			//timerAlarmEnable(timer);
+			timerAlarmEnable(timer);
 
 		} else {
 			state = "incompleta";
-			//timerAlarmDisable(timer);
+			timerAlarmDisable(timer);
 
-			Serial.print("\n A caixa nao esta completa");
+			Serial.print("\nESTADO:CAIXA INCOMPLETA");
 			Serial.print("\n tags em falta:");
 			for (int k = 0; k < missing_tag_counter; k++) {
 				Serial.print(missing_tags[k]);
@@ -477,7 +489,7 @@ void scan_tags_row(String search_string, String current_reading_array[]) { // a 
 		for (int j = 0; j < cards.len; j++) {
 
 			check3[j] = 0;
-			for (int i = 0; i < count3; i++) {
+			for (int i = 0; i < count2; i++) {
 
 				if (current_reading_array[j] == current_reading_2[i]) {
 					check3[j] = 1;
@@ -514,7 +526,7 @@ void existing_tags(String search_string) {
 	char char_array[5];
 	int check = 0;
 	int count2 = 0;
-
+	int check_main = 0;
 	Serial.print("\n");
 
 	myFile = SD.open(filename_box_tag, FILE_READ);
@@ -522,11 +534,8 @@ void existing_tags(String search_string) {
 	if (myFile) {
 
 		while (myFile.available()) {
-
 			row_reading[count] = myFile.readStringUntil('\n');
-
 			count++;
-
 		}
 		myFile.close();
 
@@ -534,10 +543,6 @@ void existing_tags(String search_string) {
 			count2 = 0;
 			char column[row_reading[counter].length()];
 
-			/*Serial.print("\nROW*************************************");
-			 Serial.print(row_reading[counter]);
-			 Serial.print("END*************************************");
-			 */
 			row_reading[counter].toCharArray(column,
 					row_reading[counter].length());
 			ptr = strtok(column, ",");
@@ -548,213 +553,301 @@ void existing_tags(String search_string) {
 			}
 
 			for (int i = 0; i < count2; i++) {
-				/*	Serial.print("\n*************************************");
-				 Serial.print(current_reading[i]);
-				 Serial.print("\n");*/
+
 				if (search_string == current_reading[i]) {
 					check = 1;
 					tag_main = current_reading[0];
 
 				}
-
 			}
 
 		}
+
 		if (search_string != tag_main) {
+
 			if (check == 1) {
-				Serial.print("\A tag:");
+
+				Serial.print("\nA tag:");
 				Serial.print(search_string);
 				Serial.print(" esta registada no sistema e ");
 				Serial.print("corresponde a caixa: ");
 				Serial.print(tag_main);
 				Serial.print("\n-------------------------------------------\n");
 			} else {
-				Serial.print("\A tag:");
+
+				Serial.print("\A tag: ");
 				Serial.print(search_string);
-				Serial.print(" nao esta registada no sistema:  ");
+				Serial.print("nao esta registada no sistema:  ");
 
 				Serial.print("\n-------------------------------------------\n");
+
 			}
 		} else {
 
-			Serial.print("A tag:");
+			Serial.print("A tag: ");
 			Serial.print(search_string);
-			Serial.print(" e uma tag caixa");
+			Serial.print(" e uma tag associada a caixa");
 			Serial.print("\n------------------------------------------\n");
 		}
-
 	}
 }
 void raw_registo(String present_tags[], String main, String state) {
 	DateTime now = rtc.now();
-	myFile = SD.open(filename_raw_registos, FILE_WRITE);
-	String all = "";
+
+	String last_reading;
+	int file_counter = 0;
+	int pos_reg = 0;
+	myFile = SD.open(filename_raw_registos);
+
 	if (myFile) {
-		myFile.print('\n');
-		myFile.print("ESP32-modulo1");
-		myFile.print(',');
-		myFile.print(now.hour());
-		myFile.print(":");
-		myFile.print(now.minute());
-		myFile.print(":");
-		myFile.print(now.second());
 
-		myFile.print(',');
-		myFile.print(now.day());
-		myFile.print("/");
+		// read from the file until there's nothing else in it:
+		//Serial.print("\nlendo do ficheiro1  as tags que sao caixas ");
+		while (myFile.available()) {
 
-		myFile.print(now.month());
-		myFile.print("/");
+			last_reading = myFile.readStringUntil(','); // para ler x
 
-		myFile.print(now.year());
-		myFile.print(',');
-		myFile.print("tags presentes:");
-		for (int i; i < cards.len; i++) {
-			myFile.print(present_tags[i]);
-			myFile.print(',');
-			//all=all+present_tags[i];
+			if (last_reading.length() != 0) {
+				pos_reg = myFile.position();
+
+			} else
+				pos_reg = 0;
+
+			file_counter++;
 
 		}
-		myFile.print(state);
-		myFile.print('\n');
 		myFile.close();
+		myFile = SD.open(filename_raw_registos, FILE_WRITE);
+		if (myFile) {
+			if (myFile.seek(pos_reg)) {
+				myFile.println("ESP32-modulo1");
+				myFile.print(',');
+				myFile.print(now.hour());
+				myFile.print(":");
+				myFile.print(now.minute());
+				myFile.print(":");
+				myFile.print(now.second());
 
-		if (WiFi.status() == WL_CONNECTED) {
+				myFile.print(',');
+				myFile.print(now.day());
+				myFile.print("/");
 
-			http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+				myFile.print(now.month());
+				myFile.print("/");
 
-			String httpRequestData = "api_key=" + apiKeyValue + "&sensor="
-					+ sensorName + "&location=" + sensorLocation + "&value1="
-					+ String(state) + "&value2=" + String(main) + "&value3="
-					+ String(present_tags[0]) + "&value4="
-					+ String(present_tags[1]) + "&value5="
-					+ String(present_tags[2]) + "&value6="
-					+ String(present_tags[3]) + "&value7="
-					+ String(present_tags[4]) + "&value8="
-					+ String(present_tags[5]) + "&value9="
-					+ String(present_tags[6]) + "&value10="
-					+ String(present_tags[7] + "");
+				myFile.print(now.year());
+				myFile.print(',');
+				myFile.print("tags presentes:");
+				for (int i; i < cards.len; i++) {
+					myFile.print(present_tags[i]);
+					myFile.print(',');
 
-			/*  String httpRequestData = "api_key=" + apiKeyValue + "&sensor=" + sensorName
-			 + "&location=" + sensorLocation + "&value1=" + String(state)
-			 + "&value2=" + String(main)+ "&value3=" + all +"";
+				}
+				myFile.print(state);
+				myFile.print('\n');
 
-			 */
+			}
+			myFile.close();
 
-			Serial.print("httpRequestData: ");
-			Serial.println(httpRequestData);
-			int httpResponseCode = http.POST(httpRequestData);
+			/*if ((millis() - lastTime) > timerDelay) {
+			 //Check WiFi connection status
+			 if(WiFi.status()== WL_CONNECTED){
+			 HTTPClient http;
 
-			/* if (httpResponseCode>0) {
+			 String serverPath = serverName1 + "&value1=" + String("wwwwwwwww");
+
+			 // Your Domain name with URL path or IP address with path
+			 http.begin(serverPath.c_str());
+
+			 // Send HTTP GET request
+			 int httpResponseCode = http.GET();
+
+			 if (httpResponseCode>0) {
 			 Serial.print("HTTP Response code: ");
 			 Serial.println(httpResponseCode);
+			 String payload = http.getString();
+			 Serial.println(payload);
 			 }
 			 else {
 			 Serial.print("Error code: ");
 			 Serial.println(httpResponseCode);
+			 }
+			 // Free resources
+			 http.end();
+			 }
+			 else {
+			 Serial.println("WiFi Disconnected");
+			 }
+			 lastTime = millis();
 			 }*/
 
-			http.end();
-		} else {
-			Serial.println("WiFi Disconnected");
+			if (WiFi.status() == WL_CONNECTED) {
+
+				http.addHeader("Content-Type",
+						"application/x-www-form-urlencoded");
+
+				String httpRequestData = "api_key=" + apiKeyValue + "&sensor="
+						+ sensorName + "&location=" + sensorLocation
+						+ "&value1=" + String(state) + "&value2=" + String(main)
+						+ "&value3=" + String(present_tags[0]) + "&value4="
+						+ String(present_tags[1]) + "&value5="
+						+ String(present_tags[2]) + "&value6="
+						+ String(present_tags[3]) + "&value7="
+						+ String(present_tags[4]) + "&value8=" + "";
+				/*+ String(present_tags[5]) + "&value9="
+				 + String(present_tags[6]) + "&value10="
+				 + String(present_tags[7] + "");*/
+
+				/*  String httpRequestData = "api_key=" + apiKeyValue + "&sensor=" + sensorName
+				 + "&location=" + sensorLocation + "&value1=" + String(state)
+				 + "&value2=" + String(main)+ "&value3=" + all +"";
+
+				 */
+
+				Serial.print("httpRequestData: ");
+				Serial.println(httpRequestData);
+				int httpResponseCode = http.POST(httpRequestData);
+
+				/* if (httpResponseCode>0) {
+				 Serial.print("HTTP Response code: ");
+				 Serial.println(httpResponseCode);
+				 }
+				 else {
+				 Serial.print("Error code: ");
+				 Serial.println(httpResponseCode);
+				 }*/
+
+				http.end();
+			}
 
 		}
-
 	}
-
 }
 void registo(String main, String present_tags[], int count, String state) {
 	DateTime now = rtc.now();
-	myFile = SD.open(filename_registos, FILE_WRITE);
+	String file_registo[30];
+	String last_reading;
+	int file_counter = 0;
+	int pos_reg;
+	myFile = SD.open(filename_registos);
 
 	if (myFile) {
-		myFile.print('\n');
-		myFile.print("ESP32-modulo1");
-		myFile.print(',');
-		myFile.print(now.hour());
-		myFile.print(":");
-		myFile.print(now.minute());
-		myFile.print(":");
-		myFile.print(now.second());
 
-		myFile.print(',');
-		myFile.print(now.day());
-		myFile.print("/");
-
-		myFile.print(now.month());
-		myFile.print("/");
-
-		myFile.print(now.year());
-		myFile.print(',');
-
-		myFile.print("Caixa-" + main);
-		myFile.print(',');
-		myFile.print("tags presentes:");
-		for (int i; i < count; i++) {
-			myFile.print(present_tags[i]);
-			myFile.print(',');
-		}
-		myFile.print(state);
-		myFile.print('\n');
-		myFile.close();
-
-	}
-
-}
-void existing_tags2(String search_string[], int num) {
-	int count = 0;
-	String row_reading[30];
-	String current_reading[30];
-	String tag_main;
-	char *ptr;
-	char char_array[5];
-	int check = 0;
-	int count2 = 0;
-	Serial.print("\n");
-	myFile = SD.open(filename_box_tag, FILE_READ);
-	if (myFile) {
+		// read from the file until there's nothing else in it:
+		//Serial.print("\nlendo do ficheiro1  as tags que sao caixas ");
 		while (myFile.available()) {
-			row_reading[count] = myFile.readStringUntil('\n');
-			count++;
+
+			last_reading = myFile.readStringUntil(','); // para ler x
+
+			if (last_reading.length() != 0) {
+				pos_reg = myFile.position();
+				//Serial.print("\nLASSSSSSSTTTTTTTTT READING");
+				//Serial.print(last_reading);
+			} else
+				pos_reg = 0;
+			//Serial.print("\ncoluna ");
+			//Serial.print(file_counter_1); // 00-99
+			//Serial.print(": ");
+			//Serial.print(file1_tags[file_counter_1]);
+			file_counter++;
+
+			//Serial.print("\t pos:");
+			//Serial.print(lastpos_file1);
 		}
 		myFile.close();
-		for (int counter = 0; counter < count; counter++) {
-			count2 = 0;
-			char column[row_reading[counter].length()];
-			row_reading[counter].toCharArray(column,
-					row_reading[counter].length());
-			ptr = strtok(column, ",");
-			while (ptr != NULL) {
-				current_reading[count2] = ptr;
-				count2++;
-				ptr = strtok(NULL, ",");
-			}
-			for (int i = 0; i < count2; i++) {
-				for (int j = 0; j < num; j++) {
-					if (search_string[j] == current_reading[i]) {
-						check = 1;
-						tag_main = current_reading[0];
-					}
-					if (check == 1) {
-						Serial.print("\A tag ");
-						Serial.print(search_string[j]);
-						Serial.print("esta registada no sistema e ");
-						Serial.print("corresponde a caixa: ");
-						Serial.print(tag_main);
-						Serial.print(
-								"\n-------------------------------------------\n");
-					} else {
-						Serial.print("\A tag ");
-						Serial.print(search_string[j]);
-						Serial.print("\n  nao esta registada no sistema:  ");
-						Serial.print(
-								"\n-------------------------------------------\n");
-					}
+
+		myFile = SD.open(filename_registos, FILE_WRITE);
+
+		if (myFile) {
+			if (myFile.seek(pos_reg)) {
+				//myFile.println('\n');
+				myFile.println("ESP32-modulo1");
+				myFile.print(',');
+				myFile.print(now.hour());
+				myFile.print(":");
+				myFile.print(now.minute());
+				myFile.print(":");
+				myFile.print(now.second());
+
+				myFile.print(',');
+				myFile.print(now.day());
+				myFile.print("/");
+
+				myFile.print(now.month());
+				myFile.print("/");
+
+				myFile.print(now.year());
+				myFile.print(',');
+
+				myFile.print("Caixa-" + main);
+				myFile.print(',');
+				myFile.print("tags presentes:");
+				for (int i; i < count; i++) {
+					myFile.print(present_tags[i]);
+					myFile.print(',');
 				}
+				myFile.print(state);
+				myFile.close();
+
 			}
 		}
+
 	}
 }
+/*void existing_tags2(String search_string[], int num) {
+ int count = 0;
+ String row_reading[30];
+ String current_reading[30];
+ String tag_main;
+ char *ptr;
+ char char_array[5];
+ int check = 0;
+ int count2 = 0;
+ Serial.print("\n");
+ myFile = SD.open(filename_box_tag, FILE_READ);
+ if (myFile) {
+ while (myFile.available()) {
+ row_reading[count] = myFile.readStringUntil('\n');
+ count++;
+ }
+ myFile.close();
+ for (int counter = 0; counter < count; counter++) {
+ count2 = 0;
+ char column[row_reading[counter].length()];
+ row_reading[counter].toCharArray(column,
+ row_reading[counter].length());
+ ptr = strtok(column, ",");
+ while (ptr != NULL) {
+ current_reading[count2] = ptr;
+ count2++;
+ ptr = strtok(NULL, ",");
+ }
+ for (int i = 0; i < count2; i++) {
+ for (int j = 0; j < num; j++) {
+ if (search_string[j] == current_reading[i]) {
+ check = 1;
+ tag_main = current_reading[0];
+ }
+ if (check == 1) {
+ Serial.print("\A tag ");
+ Serial.print(search_string[j]);
+ Serial.print("esta registada no sistema e ");
+ Serial.print("corresponde a caixa: ");
+ Serial.print(tag_main);
+ Serial.print(
+ "\n-------------------------------------------\n");
+ } else {
+ Serial.print("\A tag ");
+ Serial.print(search_string[j]);
+ Serial.print("\n  nao esta registada no sistema:  ");
+ Serial.print(
+ "\n-------------------------------------------\n");
+ }
+ }
+ }
+ }
+ }
+ }*/
 String func_adicionar_novas_tags() {
 	String current_reading;
 	card = RFID.A_single_poll_of_instructions();
@@ -817,27 +910,29 @@ void ler_file_1() {
 
 void InserirBox_file_1() {
 	String current_reading = func_adicionar_novas_tags();
-	int check = 0;
-	for (int j = 0; j < file_counter_1; j++) {
-		if (current_reading == file1_tags[j]) {
-			Serial.print(
-					"\nTag ja inserida no sistema e corresponde a uma caixa ");
-			check = 1;
-		} else if (current_reading != file1_tags[j] && (j == file_counter_1 - 1)
-				&& check != 1) {
-			file_counter_1++;
-			file1_tags[file_counter_1] = current_reading;
-			check = 1;
-			myFile = SD.open(filename_tags, FILE_WRITE);
-			if (myFile) {
-				myFile.seek(lastpos_file1);
-				myFile.print(',');
-				myFile.print(current_reading);
-				Serial.print("\nA tag lida:");
-				Serial.print(current_reading);
-				Serial.print("\nfoi registada como tag de caixa!");
-				myFile.close();
-				inserirBox_file_2(current_reading);
+	if (current_reading.length() != 0) {
+		int check = 0;
+		for (int j = 0; j < file_counter_1; j++) {
+			if (current_reading == file1_tags[j]) {
+				Serial.print(
+						"\nTag ja inserida no sistema e corresponde a uma caixa ");
+				check = 1;
+			} else if (current_reading != file1_tags[j]
+					&& (j == file_counter_1 - 1) && check != 1) {
+				file_counter_1++;
+				file1_tags[file_counter_1] = current_reading;
+				check = 1;
+				myFile = SD.open(filename_tags, FILE_WRITE);
+				if (myFile) {
+					myFile.seek(lastpos_file1);
+					myFile.print(',');
+					myFile.print(current_reading);
+					Serial.print("\nA tag lida:");
+					Serial.print(current_reading);
+					Serial.print("\nfoi registada como tag de caixa!");
+					myFile.close();
+					inserirBox_file_2(current_reading);
+				}
 			}
 		}
 	}
@@ -876,17 +971,40 @@ void ler_file_2() {
 		myFile.close();
 		Serial.print("\nUltima posicao do ficheiro2:");
 		Serial.print(last_reading);
+
+		Serial.print("\n:Posicao:");
+		Serial.print(lastpos_file2);
+
 		imprimir_file2();
 	}
 
 }
+int ler_end_of_file_2() {
 
+	int pos = 0;
+	myFile = SD.open(filename_box_tag);
+	String last_reading;
+	if (myFile) {
+
+		while (myFile.available()) {
+
+			pos = myFile.position();
+		}
+		myFile.close();
+
+	}
+	Serial.print("\nUltima posicao do ficheiro2:");
+	Serial.print(last_reading);
+	Serial.print("\n:Posicao:");
+	Serial.print(pos);
+	return pos;
+}
 void inserirBox_file_2(String current_reading) {
 	int check = 0;
 	if (current_reading.length() != 0) {
 		for (int j = 0; j < file_counter_2; j++) {
 			if (current_reading == file2_tags[j]) {
-				if (current_reading != 0)
+				if (current_reading.length() != 0)
 					Serial.print(
 							"\nTag ja inserida no sistema e corresponde a uma caixa ");
 				check = 1;
@@ -912,26 +1030,6 @@ void inserirBox_file_2(String current_reading) {
 		Serial.print("nao ha tags lidas");
 }
 
-/*void write_sd() {
- myFile = SD.open(filename_box_tag, FILE_WRITE);
- if (myFile) {
- // read from the file until there's nothing else in it:
- Serial.print("\n\nWriting to file 1...");
- myFile.print("928ff, 9fffe, 9fff2.");
- // close the file:
- myFile.close();
- Serial.println("done.");
- }
- myFile = SD.open(filename_box_tag, FILE_WRITE);
- if (myFile) {
- // read from the file until there's nothing else in it:
- Serial.print("\n\nWriting to file 2...");
- myFile.println("928ff, 9fffe, 9fff2.");
- // close the file:
- myFile.close();
- Serial.println("done.");
- }
- }*/
 String Inserir_tag_main_() {
 	Serial.print(
 			"\nInserir tag de caixa a que se pretende associar numa nova tag");
@@ -953,217 +1051,294 @@ String Inserir_tag_main_() {
 	RFID.clean_data();
 }
 void Inserir_tag_nova_() {
-
+	int check = 0;
 	char new_tag[6];
 	char tag_main[6];
 	String reading_main;
 	String reading;
-	while (reading.length() != 5) {
-		Serial.print("\n ler nova tag a registar");
-		reading = func_adicionar_novas_tags();
-		if (reading.length() == 5) {
-			int escolha = 0;
-			Serial.print("\n nova tag lida:");
-			Serial.print(reading);
 
-			while ((escolha != 1 || escolha != 2)) {
-				Serial.print("\nconfirmar 1-Sim  2-Nao");
-				escolha = Serial.parseInt();
-				if (escolha == 1) {
+	int check_main;
+	int escolha = 0;
+	Serial.print("\n Colocar a tag nova a inserir no leitor e pressionar o botão 1 para ler");
 
-					break;
-				} else if (escolha == 2) {
-					Serial.print("Escolher nova tag a associar como nova");
+	while (escolha != 1 || reading.length() != 5) {
+		escolha = Serial.parseInt();
+		if (escolha == 1) {
+			reading = "";
+			reading = func_adicionar_novas_tags();
+			check = 1;
 
-					reading = func_adicionar_novas_tags();
-				}
-				delay(2000);
-			}
+			delay(1000);
 		}
-		delay(2000);
 	}
-	while (reading_main.length() != 5) {
-		Serial.print("\n ler tag caixa a que se pretende associar");
-		reading_main = func_adicionar_novas_tags();
-		if (reading_main.length() == 5) {
+	if (check == 1) {
+		check = 0;
+		escolha = 0;
+		Serial.print("\nTag lida:");
 
-			int escolha = 0;
-			int check_main = 0;
+		Serial.print(reading);
+		Serial.print("Pretende confirmar insercao 1-Sim  2-Nao");
+		escolha = Serial.parseInt();
+		while ((escolha != 1 || escolha != 2)) {
 
-			while (check_main == 0) {
+			escolha = Serial.parseInt();
+			if (escolha == 1) {
 
-				for (int j = 0; j < file_counter_2; j++) {
-					if (reading_main == file2_tags[j]) {
-						check_main = 1;
-						Serial.print("\n tag lida pertence a uma caixa:");
-						Serial.print(reading_main);
-					} else if (j == file_counter_2 - 1 && check_main == 0) {
+				reading.toCharArray(new_tag, 6);
+
+				myFile = SD.open(filename_box_tag);
+				if (myFile) {
+
+					if (myFile.find(new_tag)) {
 
 						Serial.print(
-								"\n tag de caixa lida nao se encontra no sistema:");
-						Serial.print("\n Ler tag de caixa novamente");
-						reading_main = "";
+								"\n Tag ja registada no sistema logo nao podera ser adicionada novamente!");
+						Serial.print("\n voltar ao menu inicial");
+						check = 1;
+						myFile.close();
+
+						return;
+					}
+					myFile.close();
+
+				}
+
+				if (check == 0) {
+					Serial.print(
+							"\n Primeira tag lida valida para insersao, por favor colocar  tag  correspondente a caixa que pretende associar e pressionar o botão 1 para ler");
+
+					escolha = 0;
+
+					while (escolha != 1 || reading_main.length() != 5) {
+						escolha = Serial.parseInt();
+						if (escolha == 1) {
+							reading_main = "";
+							reading_main = func_adicionar_novas_tags();
+
+							delay(1000);
+
+						}
+					}
+					escolha = 0;
+					Serial.print("\n tag  de caixa lida:");
+					Serial.print(reading);
+					Serial.print("\nconfirmar insercao 1-Sim  2-Nao");
+					while ((escolha != 1 || escolha != 2)) {
+
+						escolha = Serial.parseInt();
+
+					if (escolha == 1 && reading_main.length() == 5) {
+						Serial.print("\n segunda tag lida!");
+						Serial.print(reading_main);
+						int escolha = 0;
+						int check_main = 0;
 
 
-						delay(2000);
+
+						for (int j = 0; j < file_counter_2; j++) {
+							if (reading_main == file2_tags[j]) {
+								check_main = 1;
+								Serial.print("\n tag nova:");
+								Serial.print(reading);
+								Serial.print("\n associada a tag");
+								Serial.print("\n com sucesso");
+								put_on_line(reading,reading_main);
+								Serial.print(reading_main);
+							} else if (j == file_counter_2 - 1
+									&& check_main == 0) {
+
+								Serial.print(
+										"\n a segunda tag de caixa lida nao se encontra no sistema ou nao e uma tag correspondente a caixa para associar:");
+
+								Serial.print("\n Voltar ao menu inicial");
+								return;
+								delay(2000);
+							}
+
+						}
+					}
 					}
 
 				}
 
+			} else if (escolha == 2) {
+
+				Serial.print("\nVoltar para o menu inicial sem processo de insercao concluido");
+				return;
 			}
 
-			Serial.print("\n tag:");
-			Serial.print(reading);
-
 		}
-
-		delay(2000);
 	}
-	reading.toCharArray(new_tag, 6);
-	reading_main.toCharArray(tag_main, 6);
-	myFile = SD.open(filename_box_tag);
-	if (myFile) {
-
-		if (myFile.find(new_tag)) {
-
-			Serial.print(
-					"\n Tag ja registada no sistema logo nao podera ser adicionada novamente!");
-
-		}
-		myFile.close();
-	}
-
-	RFID.clean_data(); //Empty the data after using it 使用完数据后要将数据清空}
 
 }
 
-void put_on_line() { // para uma tag main adquirir as tags que lhe estao associadas
-	int check = 0;
-	int pos = 0;
-	int count = 0;
-	int count2 = 0;
-	char *ptr;
-	char char_array[7];
-	char last_reading_char[6];
-	String current_reading_2[30];
-	String reading;
-	String tag_main_2;
-	String string_find;
-	String last_reading;
 
-	//String tag_main = Inserir_tag_main_();
-	//String tag_nova = Inserir_tag_nova_();
-	//String current_reading = func_adicionar_novas_tags();
-	String tag_main = "9ddd2";
-	String tag_nova = "merda";
-	tag_main_2 = tag_main + ",";
-	tag_main_2.toCharArray(char_array, 6);
-	if (tag_nova.length() == 5 && tag_main.length() == 5) {
-		Serial.print("\nInserir na caixa:");
+void put_on_line(String tag_nova, String tag_main) { // para uma tag main adquirir as tags que lhe estao associadas
+int check = 0;
+int pos = 0;
+int count = 0;
+int count2 = 0;
+char *ptr;
+char char_array[6];
+char last_reading_char[6];
+String current_reading_2[30];
+String reading;
+String tag_main_2;
+String last_reading;
+String deletada;
+int pos2 = 0;
+//String tag_main = Inserir_tag_main_();
+//String tag_nova = Inserir_tag_nova_();
+//String current_reading = func_adicionar_novas_tags();
+//String tag_main = "928ff";
+//String tag_nova = "tag99";
+tag_main_2 = tag_main + ",";
+tag_main_2.toCharArray(char_array, 6);
+if (tag_nova.length() != 0 && tag_main.length() == 5) {
+	Serial.print("\nInserirsao da tag :");
+	Serial.print(tag_nova);
+	Serial.print("\nna caixa");
+	Serial.print(char_array);
+	myFile = SD.open(filename_box_tag, FILE_READ);
+	if (myFile) {
+		if (myFile.find(char_array)) {  // procura a tag main
+			myFile.position();         // devolve a posiÃ§Ã£o
+			while (myFile.available()) {
+				reading = myFile.readStringUntil('\n');
+				deletada = myFile.readStringUntil('\0');
+				if (myFile.find("\n")) { // serve para assimuir apenas a 1Âª coluna - sai na primeira ','
+					//Serial.print("posicaooooo");
+					//Serial.print(pos2);
+
+					Serial.print(deletada);
+					count++;
+					break;
+				}
+			}
+		}
+
+		char column[reading.length()];
+		Serial.print("\n\nLinha completa da tag:");
+
 		Serial.print(char_array);
-		Serial.print("\nA tag");
-		Serial.print(tag_nova);
+		Serial.print(":\n");
+		Serial.print(reading);
+		Serial.print("\n\n-------------------------------------------");
+		reading.toCharArray(column, reading.length());
+		ptr = strtok(column, ",");
+		while (ptr != NULL) {
+//				current_reading_2[count2] = ptr;
+			last_reading = ptr;
+//				count2++;
+			ptr = strtok(NULL, ",");
+		}
+
+		last_reading.toCharArray(last_reading_char, 6);
 		myFile = SD.open(filename_box_tag, FILE_READ);
 		if (myFile) {
-			if (myFile.find(char_array)) {
-				myFile.position();
-				while (myFile.available()) {
-					reading = myFile.readStringUntil('\n');
-
-					if (myFile.find(",")) {
-						//pos = myFile.position();
-						count++;
-						break;
-					}
-				}
+			if (myFile.find(last_reading_char)) {
+				pos = myFile.position();
+				//Serial.print("\n ultima posicao:");
+				//Serial.print(pos);
+				//myFile.close();
 			}
 			myFile.close();
+			Serial.print(last_reading_char);
+			myFile = SD.open(filename_box_tag, FILE_WRITE);
+			if (myFile.seek(pos)) {
+				myFile.print(',');
+				myFile.println(tag_nova);
+				myFile.print(deletada);
 
-			char column[reading.length()];
-			Serial.print("\n\nLinha completa da tag:");
-
-			Serial.print(char_array);
-			Serial.print(":\n");
-			Serial.print(reading);
-			Serial.print("\n\n-------------------------------------------");
-			reading.toCharArray(column, reading.length());
-			ptr = strtok(column, ",");
-			while (ptr != NULL) {
-				current_reading_2[count2] = ptr;
-				last_reading = ptr;
-				count2++;
-				ptr = strtok(NULL, ",");
-			}
-			string_find = last_reading + ',';
-			string_find.toCharArray(last_reading_char, 6);
-			myFile = SD.open(filename_box_tag, FILE_READ);
-			if (myFile) {
-				if (myFile.find(last_reading_char)) {
-					pos = myFile.position();
-					Serial.print("encontrouuuuuuuuuuuuuuuuuuuuu");
-
+				if (myFile.seek(lastpos_file2)) {
+					//Serial.print("entrooooooooooooooooou");
+					//myFile.print("print");
+					String teste = myFile.readStringUntil('\n');
+					Serial.print(teste);
+					myFile.position();
 					myFile.close();
-				}
-				myFile.close();
-				Serial.print(last_reading_char);
-				myFile = SD.open(filename_box_tag, FILE_WRITE);
-				if (myFile.seek(pos)) {
-					myFile.print(',' + tag_nova + ';');
-					//myFile.print(tag_nova);
 
-					myFile.close();
 				}
-				Serial.print("\nA ultima tag lida:");
-				Serial.print(last_reading_char);
-				Serial.print("\n");
-
+				//myFile.close();
 			}
+			//myFile.close();
+			Serial.print("\nA ultima tag lida:");
+			Serial.print(last_reading_char);
+			Serial.print("\n");
 
 		}
 
 	}
 
-	/*myFile = SD.open(filename_box_tag, FILE_WRITE);
-	 if (myFile) {
-	 myFile.seek(pos);
-	 myFile.print(last_reading_char);
-	 myFile.print(",");
-	 myFile.print(tag_nova);
-	 myFile.close();
-	 Serial.print("\nA ultima tag lida:");
-	 Serial.print(last_reading_char);
-	 Serial.print("\n");
-	 myFile.close();
-	 }*/
+}
+
+/*myFile = SD.open(filename_box_tag, FILE_WRITE);
+ if (myFile) {
+ myFile.seek(pos);
+ myFile.print(last_reading_char);
+ myFile.print(",");
+ myFile.print(tag_nova);
+ myFile.close();
+ Serial.print("\nA ultima tag lida:");
+ Serial.print(last_reading_char);
+ Serial.print("\n");
+ myFile.close();
+ }*/
 
 }
 
 void imprimir_file1() {
-	if (file_counter_1 != 0) {
+if (file_counter_1 != 0) {
 
-		Serial.print("\nTags main registadas no ficheiro 1:");
+	Serial.print("\nTags main registadas no ficheiro 1:");
 
-		for (int i = 0; i < file_counter_1; i++) {
-			Serial.print("\n");
-			Serial.print(file1_tags[i]);
-
-		}
+	for (int i = 0; i < file_counter_1; i++) {
+		Serial.print("\n");
+		Serial.print(file1_tags[i]);
 
 	}
+
+}
 }
 
 void imprimir_file2() {
-	if (file_counter_2 != 0) {
+if (file_counter_2 != 0) {
 
-		Serial.print("\nTags main registadas no ficheiro 2:");
+	Serial.print("\nTags main registadas no ficheiro 2:");
 
-		for (int i = 0; i < file_counter_2; i++) {
-			Serial.print("\n");
-			Serial.print(file2_tags[i]);
-
-		}
+	for (int i = 0; i < file_counter_2; i++) {
+		Serial.print("\n");
+		Serial.print(file2_tags[i]);
 
 	}
+
 }
-void ler_tag_main_inserir() {
+}
+void write_sd() {
+myFile = SD.open(filename_tags, FILE_WRITE);
+
+if (myFile) {
+
+// read from the file until there's nothing else in it:
+
+	Serial.print("\n\nWriting to file1...");
+	myFile.print("9ddde,9dddb,9ddd2");
+	myFile.close();
+
+}
+
+myFile = SD.open(filename_box_tag, FILE_WRITE);
+if (myFile) {
+
+// read from the file until there's nothing else in it:
+
+	Serial.print("\n\nWriting to file2...");
+
+	myFile.println("9ddd2,9d4df");
+	myFile.println("9ddde,64613");
+	myFile.println("9dddb,x2222,x3212");
+	myFile.close();
+	Serial.println("done.");
+}
+
 }
